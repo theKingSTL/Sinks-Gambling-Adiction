@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { SportKey } from "@/lib/sports";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const id = () => text("id").primaryKey().$defaultFn(() => crypto.randomUUID());
@@ -65,6 +66,7 @@ export const betLegs = sqliteTable(
   {
     id: id(),
     betId: text("bet_id").notNull().references(() => bets.id, { onDelete: "cascade" }),
+    sport: text("sport").$type<SportKey>().notNull().default("nba"),
     gameId: text("game_id").notNull(),
     market: text("market").$type<"ml" | "spread" | "total">().notNull(),
     side: text("side").$type<"home" | "away" | "over" | "under">().notNull(),
@@ -77,7 +79,7 @@ export const betLegs = sqliteTable(
     source: text("source").$type<"book" | "house">().notNull(),
     status: text("status").$type<LegStatus>().notNull().default("open"),
   },
-  (t) => [index("legs_bet_idx").on(t.betId), index("legs_open_idx").on(t.status, t.gameId)],
+  (t) => [index("legs_bet_idx").on(t.betId), index("legs_open_idx").on(t.status, t.sport, t.gameId)],
 );
 
 export const posts = sqliteTable(

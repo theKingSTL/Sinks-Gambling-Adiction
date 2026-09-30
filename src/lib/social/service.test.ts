@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createUser } from "@/lib/auth/core";
 import { createDb, type Db } from "@/lib/db/client";
 import { betLegs, bets } from "@/lib/db/schema";
-import { createPost, getFeed, getLeaderboard, getStats, setFollow } from "./service";
+import { createPost, getFeed, getLeaderboard, getStats, searchUsers, setFollow } from "./service";
 
 let db: Db;
 let alice: string;
@@ -74,5 +74,18 @@ describe("stats", () => {
     bet(alice, "won", 1_000, 2_000);
     bet(bob, "won", 1_000, 5_000);
     expect(getLeaderboard(db).map((r) => r.username)).toEqual(["bob", "alice"]);
+  });
+});
+
+describe("searchUsers", () => {
+  it("finds usernames containing underscores", async () => {
+    await user("big_sink_22");
+    expect(searchUsers(db, "big_sink").map((u) => u.username)).toEqual(["big_sink_22"]);
+    expect(searchUsers(db, "BIG_SINK_22")).toHaveLength(1);
+  });
+
+  it("treats LIKE wildcards literally", async () => {
+    expect(searchUsers(db, "%")).toHaveLength(0);
+    expect(searchUsers(db, "a_ice")).toHaveLength(0); // "_" must not match "l"
   });
 });

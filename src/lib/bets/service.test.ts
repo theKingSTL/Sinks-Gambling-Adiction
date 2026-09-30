@@ -3,22 +3,23 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createSession, createUser, getSessionUser, verifyCredentials } from "@/lib/auth/core";
 import { createDb, type Db } from "@/lib/db/client";
 import { bets, ledger, posts, users } from "@/lib/db/schema";
-import { buildMarkets } from "@/lib/nba/markets";
-import type { Game } from "@/lib/nba/types";
+import { buildMarkets, gameKey } from "@/lib/games/markets";
+import type { Game } from "@/lib/games/types";
 import { placeBet, resetBankroll, settleOpenBets, type MarketResolver } from "./service";
 
 const HOUR = 3_600_000;
 
 function makeGame(id: string, over: Partial<Game> = {}): Game {
   return {
+    sport: "nba",
     id,
     startsAt: new Date(Date.now() + HOUR).toISOString(),
     state: "pre",
     completed: false,
     statusText: "7:30 PM",
     seasonType: 2,
-    home: { id: `h${id}`, abbr: `H${id}`, name: `Home ${id}`, shortName: "Home", logo: null, color: null, score: null, record: null },
-    away: { id: `a${id}`, abbr: `A${id}`, name: `Away ${id}`, shortName: "Away", logo: null, color: null, score: null, record: null },
+    home: { id: `h${id}`, abbr: `H${id}`, name: `Home ${id}`, shortName: "Home", logo: null, color: null, score: null, record: null, rank: null },
+    away: { id: `a${id}`, abbr: `A${id}`, name: `Away ${id}`, shortName: "Away", logo: null, color: null, score: null, record: null, rank: null },
     bookOdds: {
       provider: "Test Book",
       homeMoneyline: -150,
@@ -38,11 +39,11 @@ let db: Db;
 let userId: string;
 let games: Map<string, Game>;
 
-const resolver: MarketResolver = async (ids) =>
+const resolver: MarketResolver = async (refs) =>
   new Map(
-    ids.flatMap((id) => {
-      const game = games.get(id);
-      return game ? [[id, { game, markets: buildMarkets(game, () => undefined) }] as const] : [];
+    refs.flatMap(({ sport, gameId }) => {
+      const game = games.get(gameId);
+      return game ? [[gameKey(sport, gameId), { game, markets: buildMarkets(game, () => undefined) }] as const] : [];
     }),
   );
 
@@ -51,7 +52,7 @@ const balance = () => db.select().from(users).where(eq(users.id, userId)).get()!
 const finish = (id: string, home: number, away: number) =>
   games.set(id, { ...games.get(id)!, state: "post", completed: true, home: { ...games.get(id)!.home, score: home }, away: { ...games.get(id)!.away, score: away } });
 
-const fetchGame = async (id: string) => games.get(id) ?? null;
+const fetchGame = async (_sport: string, id: string) => games.get(id) ?? null;
 const later = () => Date.now() + 4 * HOUR;
 
 beforeEach(async () => {
@@ -96,8 +97,8 @@ describe("placeBet", () => {
       {
         stakeCents: 10_000,
         legs: [
-          { selectionId: "1:spread:home", price: -110, line: -3.5 },
-          { selectionId: "2:total:over", price: -110, line: 220.5 },
+          { selectionId: "nba:1:spread:home", price: -110, line: -3.5 },
+          { selectionId: "nba:2:total:over", price: -110, line: 220.5 },
         ],
       },
       resolver,
@@ -113,7 +114,7 @@ describe("placeBet", () => {
     const res = await placeBet(
       db,
       userId,
-      { stakeCents: 1_000, legs: [{ selectionId: "1:spread:home", price: -110, line: -2.5 }] },
+      { stakeCents: 1_000, legs: [{ selectionId: "nba:1:spread:home", price: -110, line: -2.5 }] },
       resolver,
     );
     expect(res.ok).toBe(false);
@@ -124,7 +125,7 @@ describe("placeBet", () => {
 
   it("rejects games that have started", async () => {
     games.set("1", makeGame("1", { state: "in" }));
-    const res = await placeBet(db, userId, { stakeCents: 1_000, legs: [{ selectionId: "1:ml:home", price: -150, line: null }] }, resolver);
+    const res = await placeBet(db, userId, { stakeCents: 1_000, legs: [{ selectionId: "nba:1:ml:home", price: -150, line: null }] }, resolver);
     expect(res).toMatchObject({ ok: false });
   });
 
@@ -135,8 +136,8 @@ describe("placeBet", () => {
       {
         stakeCents: 1_000,
         legs: [
-          { selectionId: "1:ml:home", price: -150, line: null },
-          { selectionId: "1:total:over", price: -110, line: 220.5 },
+          { selectionId: "nba:1:ml:home", price: -150, line: null },
+          { selectionId: "nba:1:total:over", price: -110, line: 220.5 },
         ],
       },
       resolver,
@@ -145,13 +146,13 @@ describe("placeBet", () => {
   });
 
   it("never lets the balance go negative", async () => {
-    const res = await placeBet(db, userId, { stakeCents: 100_001, legs: [{ selectionId: "1:ml:home", price: -150, line: null }] }, resolver);
+    const res = await placeBet(db, userId, { stakeCents: 100_001, legs: [{ selectionId: "nba:1:ml:home", price: -150, line: null }] }, resolver);
     expect(res).toEqual({ ok: false, error: "Not enough play money for that stake" });
     expect(balance()).toBe(100_000);
   });
 
   it("validates stakes", async () => {
-    const res = await placeBet(db, userId, { stakeCents: 50, legs: [{ selectionId: "1:ml:home", price: -150, line: null }] }, resolver);
+    const res = await placeBet(db, userId, { stakeCents: 50, legs: [{ selectionId: "nba:1:ml:home", price: -150, line: null }] }, resolver);
     expect(res).toEqual({ ok: false, error: "Minimum stake is $1" });
   });
 });
@@ -164,8 +165,8 @@ describe("settleOpenBets", () => {
       {
         stakeCents: 10_000,
         legs: [
-          { selectionId: "1:ml:home", price: -150, line: null },
-          { selectionId: "2:spread:away", price: -110, line: 3.5 },
+          { selectionId: "nba:1:ml:home", price: -150, line: null },
+          { selectionId: "nba:2:spread:away", price: -110, line: 3.5 },
         ],
       },
       resolver,
@@ -207,8 +208,8 @@ describe("settleOpenBets", () => {
       {
         stakeCents: 10_000,
         legs: [
-          { selectionId: "1:spread:home", price: -110, line: -3 },
-          { selectionId: "2:ml:away", price: 130, line: null },
+          { selectionId: "nba:1:spread:home", price: -110, line: -3 },
+          { selectionId: "nba:2:ml:away", price: 130, line: null },
         ],
       },
       resolver,
@@ -223,7 +224,7 @@ describe("settleOpenBets", () => {
     await placeBet(
       db,
       userId,
-      { stakeCents: 5_000, legs: [{ selectionId: "1:spread:home", price: -110, line: -3.5 }] },
+      { stakeCents: 5_000, legs: [{ selectionId: "nba:1:spread:home", price: -110, line: -3.5 }] },
       resolver,
     );
     games.set("1", { ...games.get("1")!, state: "post", completed: false, statusText: "Postponed" });
@@ -248,13 +249,13 @@ describe("resetBankroll", () => {
 
 describe("tailing", () => {
   it("links a tail to the post", async () => {
-    const placed = await placeBet(db, userId, { stakeCents: 1_000, legs: [{ selectionId: "1:ml:home", price: -150, line: null }] }, resolver);
+    const placed = await placeBet(db, userId, { stakeCents: 1_000, legs: [{ selectionId: "nba:1:ml:home", price: -150, line: null }] }, resolver);
     if (!placed.ok) throw new Error(placed.error);
     const post = db.insert(posts).values({ userId, betId: placed.betId, caption: "lock" }).returning().get();
     const tail = await placeBet(
       db,
       userId,
-      { stakeCents: 1_000, tailedFromPostId: post.id, legs: [{ selectionId: "1:ml:home", price: -150, line: null }] },
+      { stakeCents: 1_000, tailedFromPostId: post.id, legs: [{ selectionId: "nba:1:ml:home", price: -150, line: null }] },
       resolver,
     );
     expect(tail.ok).toBe(true);

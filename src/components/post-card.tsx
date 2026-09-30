@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { allSelections } from "@/lib/nba/markets";
+import { allSelections, gameKey } from "@/lib/games/markets";
 import { resolveMarkets } from "@/lib/server";
 import type { FeedItem } from "@/lib/social/service";
 import { timeAgo } from "@/lib/format";
@@ -13,10 +13,13 @@ type Tailable = { legs: SlipLeg[]; reason: string | null };
 /** Current-line versions of each post's legs, so a tail re-prices honestly. */
 export async function tailOptions(items: FeedItem[], viewerId: string | null): Promise<Map<string, Tailable>> {
   const now = Date.now();
-  const gameIds = [
-    ...new Set(items.flatMap((i) => i.legs.filter((l) => l.startsAt.getTime() > now).map((l) => l.gameId))),
-  ];
-  const live = gameIds.length ? await resolveMarkets(gameIds) : new Map();
+  const refs = new Map(
+    items
+      .flatMap((i) => i.legs)
+      .filter((l) => l.startsAt.getTime() > now)
+      .map((l) => [gameKey(l.sport, l.gameId), { sport: l.sport, gameId: l.gameId }] as const),
+  );
+  const live = refs.size ? await resolveMarkets([...refs.values()]) : new Map();
 
   return new Map(
     items.map((item): [string, Tailable] => {
@@ -26,7 +29,7 @@ export async function tailOptions(items: FeedItem[], viewerId: string | null): P
       if (item.bet.status !== "open" || item.legs.some((l) => l.startsAt.getTime() <= now)) return none("Tip-off passed");
       const legs: SlipLeg[] = [];
       for (const leg of item.legs) {
-        const entry = live.get(leg.gameId);
+        const entry = live.get(gameKey(leg.sport, leg.gameId));
         const sel = entry?.markets.open ? allSelections(entry.markets).find((s) => s.market === leg.market && s.side === leg.side) : undefined;
         if (!entry || !sel) return none("Lines closed");
         legs.push(toSlipLeg(sel, entry.game));

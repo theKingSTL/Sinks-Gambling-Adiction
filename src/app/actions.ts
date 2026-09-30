@@ -8,13 +8,19 @@ import { endSession, getCurrentUser, startSession } from "@/lib/auth/session";
 import { placeBet, resetBankroll, type PlaceBetResult } from "@/lib/bets/service";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { dayKey } from "@/lib/nba/espn";
+import { dayKey } from "@/lib/games/espn";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveMarkets } from "@/lib/server";
 import { createPost, setFollow } from "@/lib/social/service";
 import { eq } from "drizzle-orm";
 
-export type FormState = { error?: string } | undefined;
+/** Echoes back non-secret fields so a failed submit doesn't wipe what the user typed. */
+export type FormState = { error?: string; username?: string; displayName?: string } | undefined;
+
+const echo = (form: FormData) => ({
+  username: String(form.get("username") ?? "").slice(0, 40),
+  displayName: String(form.get("displayName") ?? "").slice(0, 40),
+});
 
 async function clientIp(): Promise<string> {
   const h = await headers();
@@ -28,28 +34,28 @@ function safeNext(value: FormDataEntryValue | null): string {
 }
 
 export async function signupAction(_: FormState, form: FormData): Promise<FormState> {
-  if (!rateLimit(`signup:${await clientIp()}`, 5, 60 * 60_000)) return { error: "Too many sign-ups — try later" };
+  if (!rateLimit(`signup:${await clientIp()}`, 5, 60 * 60_000)) return { error: "Too many sign-ups — try later", ...echo(form) };
   const parsed = signupSchema.safeParse({
     username: form.get("username"),
     displayName: form.get("displayName"),
     password: form.get("password"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message, ...echo(form) };
   const res = await createUser(db, parsed.data);
-  if (!res.ok) return { error: res.error };
+  if (!res.ok) return { error: res.error, ...echo(form) };
   await startSession(res.user.id);
   redirect(safeNext(form.get("next")));
 }
 
 export async function loginAction(_: FormState, form: FormData): Promise<FormState> {
   const parsed = credentialsSchema.safeParse({ username: form.get("username"), password: form.get("password") });
-  if (!parsed.success) return { error: "Wrong username or password" };
+  if (!parsed.success) return { error: "Wrong username or password", ...echo(form) };
   const ip = await clientIp();
   if (!rateLimit(`login:${ip}:${parsed.data.username}`, 8, 15 * 60_000)) {
-    return { error: "Too many attempts — wait a few minutes" };
+    return { error: "Too many attempts — wait a few minutes", ...echo(form) };
   }
   const user = await verifyCredentials(db, parsed.data);
-  if (!user) return { error: "Wrong username or password" };
+  if (!user) return { error: "Wrong username or password", ...echo(form) };
   await startSession(user.id);
   redirect(safeNext(form.get("next")));
 }

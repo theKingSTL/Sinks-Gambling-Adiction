@@ -1,14 +1,15 @@
 import "server-only";
 import { settleOpenBets, type MarketResolver } from "@/lib/bets/service";
 import { db } from "@/lib/db";
-import { getGame, getMarketsForGame } from "@/lib/nba/espn";
+import { getGame, getMarketsForGame } from "@/lib/games/espn";
+import { gameKey } from "@/lib/games/markets";
 
 /** Live markets for the games in a slip, straight from the feed. */
-export const resolveMarkets: MarketResolver = async (gameIds) => {
+export const resolveMarkets: MarketResolver = async (refs) => {
   const entries = await Promise.all(
-    gameIds.map(async (id) => {
-      const game = await getGame(id);
-      return game ? ([id, { game, markets: await getMarketsForGame(game) }] as const) : null;
+    refs.map(async ({ sport, gameId }) => {
+      const game = await getGame(sport, gameId);
+      return game ? ([gameKey(sport, gameId), { game, markets: await getMarketsForGame(game) }] as const) : null;
     }),
   );
   return new Map(entries.filter((e) => e !== null));

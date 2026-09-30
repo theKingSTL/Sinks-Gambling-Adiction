@@ -4,8 +4,9 @@ import { settleBet, gradeLeg } from "@/lib/betting/grading";
 import { parlayAmerican, payoutCents } from "@/lib/betting/odds";
 import type { Db } from "@/lib/db/client";
 import { betLegs, bets, ledger, posts, users } from "@/lib/db/schema";
-import { allSelections, parseSelectionId } from "@/lib/nba/markets";
-import type { Game, GameMarkets, Selection } from "@/lib/nba/types";
+import { allSelections, gameKey, parseSelectionId } from "@/lib/games/markets";
+import type { Game, GameMarkets, Selection } from "@/lib/games/types";
+import type { SportKey } from "@/lib/sports";
 
 export const STARTING_BANKROLL_CENTS = 100_000; // $1,000 play money
 export const RESET_THRESHOLD_CENTS = 1_000; // may reset below $10
@@ -39,7 +40,10 @@ export type PlaceBetResult =
   | { ok: true; betId: string; balanceCents: number }
   | { ok: false; error: string; changes?: LineChange[] };
 
-export type MarketResolver = (gameIds: string[]) => Promise<Map<string, { game: Game; markets: GameMarkets }>>;
+export type GameRef = { sport: SportKey; gameId: string };
+
+/** Live game + markets, keyed by `gameKey(sport, gameId)`. */
+export type MarketResolver = (games: GameRef[]) => Promise<Map<string, { game: Game; markets: GameMarkets }>>;
 
 /**
  * Place a straight bet or parlay. The client sends the price and line it saw;
@@ -58,8 +62,8 @@ export async function placeBet(
 
   const keys = input.legs.map((l) => parseSelectionId(l.selectionId));
   if (keys.some((k) => k === null)) return { ok: false, error: "Unknown selection" };
-  const gameIds = keys.map((k) => k!.gameId);
-  if (new Set(gameIds).size !== gameIds.length) {
+  const refs = keys.map((k) => ({ sport: k!.sport, gameId: k!.gameId }));
+  if (new Set(refs.map((r) => gameKey(r.sport, r.gameId))).size !== refs.length) {
     return { ok: false, error: "One pick per game — same-game parlays aren't supported yet" };
   }
 
@@ -68,12 +72,12 @@ export async function placeBet(
     if (!post) return { ok: false, error: "That post no longer exists" };
   }
 
-  const live = await resolve(gameIds);
+  const live = await resolve(refs);
   const changes: LineChange[] = [];
   const picked: { selection: Selection; game: Game }[] = [];
   for (const leg of input.legs) {
     const key = parseSelectionId(leg.selectionId)!;
-    const entry = live.get(key.gameId);
+    const entry = live.get(gameKey(key.sport, key.gameId));
     if (!entry || !entry.markets.open) {
       return { ok: false, error: `${entry ? "That game has started" : "Game not found"} — remove it from your slip` };
     }
@@ -116,6 +120,7 @@ export async function placeBet(
       .values(
         picked.map(({ selection, game }) => ({
           betId: bet.id,
+          sport: game.sport,
           gameId: game.id,
           market: selection.market,
           side: selection.side,
@@ -145,33 +150,32 @@ const VOID_AFTER_MS = 48 * 3_600_000;
  */
 export async function settleOpenBets(
   db: Db,
-  fetchGame: (id: string) => Promise<Game | null>,
+  fetchGame: (sport: SportKey, id: string) => Promise<Game | null>,
   now = Date.now(),
 ): Promise<{ settled: number }> {
-  const openGameIds = db
-    .selectDistinct({ gameId: betLegs.gameId })
+  const openGames = db
+    .selectDistinct({ sport: betLegs.sport, gameId: betLegs.gameId })
     .from(betLegs)
     .where(and(eq(betLegs.status, "open"), lt(betLegs.startsAt, new Date(now))))
-    .all()
-    .map((r) => r.gameId);
-  if (openGameIds.length === 0) return { settled: 0 };
+    .all();
+  if (openGames.length === 0) return { settled: 0 };
 
   const games = await Promise.all(
-    openGameIds.map((id) =>
-      fetchGame(id).catch((err) => {
-        console.error(`[settle] could not load game ${id}`, err);
+    openGames.map(({ sport, gameId }) =>
+      fetchGame(sport, gameId).catch((err) => {
+        console.error(`[settle] could not load ${sport} game ${gameId}`, err);
         return null;
       }),
     ),
   );
 
   const touchedBets = new Set<string>();
-  for (const [i, gameId] of openGameIds.entries()) {
+  for (const [i, { sport, gameId }] of openGames.entries()) {
     const game = games[i];
     const legs = db
       .select()
       .from(betLegs)
-      .where(and(eq(betLegs.gameId, gameId), eq(betLegs.status, "open")))
+      .where(and(eq(betLegs.sport, sport), eq(betLegs.gameId, gameId), eq(betLegs.status, "open")))
       .all();
 
     for (const leg of legs) {

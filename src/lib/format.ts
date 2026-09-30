@@ -4,10 +4,18 @@ export const money = (cents: number) => usd.format(cents / 100);
 
 export const signedMoney = (cents: number) => (cents > 0 ? "+" : cents < 0 ? "−" : "") + usd.format(Math.abs(cents) / 100);
 
-export const tipoff = (iso: string) =>
-  new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short" }).format(
-    new Date(iso),
-  );
+const kickoffFormat = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+  timeZoneName: "short",
+});
+
+/** "Sun, Oct 4, 1:00 PM EDT" — the date matters now that schedules can be browsed weeks ahead. */
+export const kickoff = (iso: string) => kickoffFormat.format(new Date(iso));
 
 export const dayLabel = (key: string, today: string) => {
   const d = new Date(Date.UTC(+key.slice(0, 4), +key.slice(4, 6) - 1, +key.slice(6, 8), 12));

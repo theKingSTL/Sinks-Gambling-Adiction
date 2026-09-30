@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { houseLines, LEAGUE_AVERAGE, normalCdf } from "./house-lines";
+import { SPORTS } from "@/lib/sports";
+import { houseLines, leagueAverage, NBA_MODEL, normalCdf, project } from "./house-lines";
 import { impliedProbability } from "./odds";
+
+const LEAGUE_AVERAGE = leagueAverage(NBA_MODEL);
 
 describe("normalCdf", () => {
   it("matches known values", () => {
@@ -47,5 +50,31 @@ describe("houseLines", () => {
       { pointsFor: 114.5, pointsAgainst: 112 },
     );
     expect(lines.homeSpread).not.toBe(0);
+  });
+
+  it("prices MLB with a fixed 1.5 run line", () => {
+    const mlb = SPORTS.mlb.model;
+    const lines = houseLines({ pointsFor: 5.2, pointsAgainst: 3.8 }, { pointsFor: 4.1, pointsAgainst: 4.6 }, 1, mlb);
+    expect(lines.homeSpread).toBe(-1.5);
+    // favorite laying 1.5 runs is usually plus money, the dog getting 1.5 is juiced
+    expect(lines.homeSpreadPrice).toBeGreaterThan(lines.awaySpreadPrice);
+    expect(lines.homeMoneyline).toBeLessThan(0);
+    expect(lines.total % 0.5).toBe(0);
+  });
+
+  it("uses football-sized numbers for the NFL", () => {
+    const nfl = SPORTS.nfl.model;
+    const lines = houseLines(leagueAverage(nfl), leagueAverage(nfl), 1, nfl);
+    expect(lines.homeSpread).toBe(-1.5);
+    expect(lines.total).toBe(45);
+  });
+});
+
+describe("project", () => {
+  it("returns a projected score and win probability", () => {
+    const p = project({ pointsFor: 120, pointsAgainst: 110 }, { pointsFor: 110, pointsAgainst: 118 });
+    expect(p.homeScore).toBeGreaterThan(p.awayScore);
+    expect(p.homeWinProb).toBeGreaterThan(0.5);
+    expect(p.homeWinProb).toBeLessThan(1);
   });
 });

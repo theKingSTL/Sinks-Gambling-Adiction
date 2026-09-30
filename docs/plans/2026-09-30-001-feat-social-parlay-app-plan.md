@@ -40,8 +40,8 @@ Friends who bet on the NBA share their slips as screenshots in group chats. You 
 
 ### Scope Boundaries
 
-- **In:** NBA only; pregame markets; web app; username + password accounts.
-- **Out (for now):** in-play betting, player props (no free prop source), real money, other leagues, comments/DMs, push notifications.
+- **In:** NFL, NCAA football, MLB and NBA; pregame markets; game predictions (win probability + projected score); browsing the full schedule ahead; web app; username + password accounts.
+- **Out (for now):** in-play betting, player props (no free prop source), real money, other leagues (NHL, soccer), comments/DMs, push notifications.
 
 ### Success Criteria
 

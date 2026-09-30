@@ -27,14 +27,31 @@ export function AuthForm({ mode, next }: { mode: "login" | "signup"; next: strin
           <label htmlFor="username" className="text-sm font-medium">
             Username
           </label>
-          <input id="username" name="username" autoComplete="username" required minLength={3} maxLength={20} className={field} />
+          <input
+            id="username"
+            name="username"
+            autoComplete="username"
+            required
+            minLength={3}
+            maxLength={20}
+            defaultValue={state?.username}
+            className={field}
+          />
         </div>
         {signup && (
           <div className="space-y-1.5">
             <label htmlFor="displayName" className="text-sm font-medium">
               Display name
             </label>
-            <input id="displayName" name="displayName" autoComplete="nickname" required maxLength={40} className={field} />
+            <input
+              id="displayName"
+              name="displayName"
+              autoComplete="nickname"
+              required
+              maxLength={40}
+              defaultValue={state?.displayName}
+              className={field}
+            />
           </div>
         )}
         <div className="space-y-1.5">

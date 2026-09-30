@@ -1,4 +1,5 @@
 import type { Market, Side } from "@/lib/betting/grading";
+import type { SportKey } from "@/lib/sports";
 
 export type GameState = "pre" | "in" | "post";
 
@@ -11,14 +12,16 @@ export type TeamSide = {
   color: string | null;
   score: number | null;
   record: string | null;
+  rank: number | null;
 };
 
 export type Game = {
+  sport: SportKey;
   id: string;
   startsAt: string; // ISO
   state: GameState;
   completed: boolean;
-  statusText: string; // "7:30 PM ET", "Q3 4:12", "Final"
+  statusText: string; // "7:30 PM ET", "Q3 4:12", "Top 5th", "Final"
   seasonType: number; // 1 preseason, 2 regular, 3 postseason, 5 play-in
   home: TeamSide;
   away: TeamSide;
@@ -41,8 +44,9 @@ export type BookOdds = {
 export type LineSource = "book" | "house";
 
 export type Selection = {
-  /** Stable key: `${gameId}:${market}:${side}` */
+  /** Stable key: `${sport}:${gameId}:${market}:${side}` */
   id: string;
+  sport: SportKey;
   gameId: string;
   market: Market;
   side: Side;
@@ -54,10 +58,20 @@ export type Selection = {
   provider: string;
 };
 
+export type Prediction = {
+  homeWinProb: number;
+  homeScore: number;
+  awayScore: number;
+  /** "market" = de-vigged sportsbook prices, "model" = house model, "espn" = ESPN Matchup Predictor */
+  source: "market" | "model" | "espn";
+};
+
 export type GameMarkets = {
+  sport: SportKey;
   gameId: string;
   open: boolean;
   moneyline: [Selection, Selection] | null;
   spread: [Selection, Selection] | null;
   total: [Selection, Selection] | null;
+  prediction: Prediction;
 };

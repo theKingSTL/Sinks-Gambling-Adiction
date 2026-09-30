@@ -1,6 +1,7 @@
 import { formatAmerican } from "@/lib/betting/odds";
 import type { Bet, BetLeg } from "@/lib/db/schema";
 import { money, signedMoney } from "@/lib/format";
+import { SPORTS } from "@/lib/sports";
 
 const STATUS_STYLE = {
   open: "text-muted",
@@ -59,7 +60,7 @@ export function BetTicket({ bet, legs }: { bet: Bet; legs: BetLeg[] }) {
                 {leg.label}
               </p>
               <p className="text-[11px] text-faint">
-                {leg.matchup} · {MARKET[leg.market]}
+                {SPORTS[leg.sport].label} · {leg.matchup} · {MARKET[leg.market]}
                 {leg.source === "house" ? " · house line" : ""}
               </p>
             </div>

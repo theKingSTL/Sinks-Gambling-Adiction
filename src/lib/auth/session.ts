@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/lib/db";
@@ -23,11 +23,20 @@ export async function startSession(userId: string): Promise<void> {
   const { token, expiresAt } = createSession(db, userId);
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Browsers drop Secure cookies on plain-HTTP origins (e.g. http://192.168.x.x:3000),
+    // which would sign the user in and immediately lose the session.
+    secure: await isHttps(),
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
   });
+}
+
+async function isHttps(): Promise<boolean> {
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (proto) return proto === "https";
+  return (h.get("origin") ?? h.get("referer") ?? "").startsWith("https://");
 }
 
 export async function endSession(): Promise<void> {

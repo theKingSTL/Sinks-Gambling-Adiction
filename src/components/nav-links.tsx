@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SPORT_KEYS } from "@/lib/sports";
 
 const LINKS = [
   { href: "/", label: "Games", auth: false },
@@ -22,7 +23,10 @@ export function NavLinks({ signedIn, variant }: { signedIn: boolean; variant: "t
       }
     >
       {LINKS.filter((l) => signedIn || !l.auth).map((l) => {
-        const active = l.href === "/" ? path === "/" || path.startsWith("/games") : path.startsWith(l.href);
+        const active =
+          l.href === "/"
+            ? path === "/" || path.startsWith("/games") || SPORT_KEYS.some((s) => path === `/${s}`)
+            : path.startsWith(l.href);
         return (
           <Link
             key={l.href}

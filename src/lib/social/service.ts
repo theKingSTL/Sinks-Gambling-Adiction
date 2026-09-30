@@ -177,11 +177,19 @@ export function getUserBets(db: Db, userId: string, limit = 100) {
 }
 
 export function searchUsers(db: Db, q: string, limit = 20) {
-  const term = `%${q.trim().toLowerCase().replace(/[%_]/g, "")}%`;
+  const needle = q.trim().toLowerCase();
+  if (!needle) return [];
+  // Escape LIKE wildcards so "_" in a username matches a literal underscore.
+  const term = `%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   return db
     .select({ id: users.id, username: users.username, displayName: users.displayName })
     .from(users)
-    .where(or(sql`lower(${users.username}) like ${term}`, sql`lower(${users.displayName}) like ${term}`))
+    .where(
+      or(
+        sql`lower(${users.username}) like ${term} escape '\\'`,
+        sql`lower(${users.displayName}) like ${term} escape '\\'`,
+      ),
+    )
     .limit(limit)
     .all();
 }

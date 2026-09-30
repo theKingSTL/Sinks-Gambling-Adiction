@@ -1,16 +1,18 @@
 # Sinks
 
-Sinks is a social NBA betting app that uses **play money only**. It has live scores, stats and lines. You build parlays with fake money, post them, and friends can tail them with one tap.
+Sinks is a social sports-betting app for the **NFL, college football, MLB and NBA** that uses **play money only**. It has live scores, stats and lines. You build parlays with fake money, post them, and friends can tail them with one tap.
 
 > No deposits, no withdrawals, no cash value. Every account starts with $1,000 in play money.
 
 ## What it does
 
-- **Live NBA data:** scoreboard for any day, live scores and clock (refreshes every 20 seconds during games), box scores, team stats and leaders. Data comes from ESPN's public API, which needs no key.
+- **Four leagues, live:** NFL, NCAA football (all FBS games, with AP rankings), MLB and NBA. Live scores and clock refresh every 20 seconds during games. Game pages have box scores (passing, rushing, batting, pitching and so on), team stats and leaders. Data comes from ESPN's public API, which needs no key.
+- **Look as far ahead as the schedule goes:** football is browsed by week, with every regular-season and playoff week in one dropdown. MLB and NBA are browsed by day, with arrows, a date picker, and a "next game day" jump.
+- **Predictions:** every game shows a win probability and projected score. The source is, in order: the sportsbook's odds with its margin removed, ESPN's Matchup Predictor when published (shown alongside on the game page), or the Sinks model.
 - **Real lines when they exist:** moneyline, spread and total for every game that hasn't tipped off. The order of preference is:
   1. Sportsbook odds from ESPN's feed (DraftKings / ESPN BET when posted).
   2. [The Odds API](https://the-odds-api.com), if you set `ODDS_API_KEY`.
-  3. A **house line** for anything no book has posted, such as most preseason games. It predicts each team's score from last season's scoring for and against, adds home-court advantage, and applies standard vig. Every line is labeled with its source.
+  3. A **house line** for anything no book has posted yet. It projects each team's score from its scoring for and against, adds home advantage, and applies standard vig, with constants tuned per sport; baseball uses the standard ±1.5 run line. Every line is labeled with its source.
 - **Correct bet math:** straight bets and parlays of 2 to 10 legs, one pick per game.
   - Payouts use exact fractions, so a 10-leg parlay never drifts by a cent.
   - A losing leg loses the parlay immediately.
@@ -36,6 +38,7 @@ A SQLite database is created and migrated automatically at `data/sinks.db` on fi
 | --- | --- |
 | `npm run dev` | Dev server |
 | `npm test` | Unit and integration tests (Vitest, in-memory SQLite) |
+| `npm run test:e2e` | Browser tests that click every button (Playwright; builds the app, uses live ESPN data) |
 | `npm run typecheck` | Route types plus `tsc` |
 | `npm run lint` | ESLint |
 | `npm run ci` | lint, then typecheck, then test, then build |
@@ -57,12 +60,14 @@ Next.js 16 (App Router, Server Actions) · React 19 · TypeScript (strict) · Ta
 
 ```
 src/lib/betting/   odds math, grading, house-line model (pure, fully tested)
-src/lib/nba/       ESPN + Odds API clients, parsers, market builder
+src/lib/sports.ts  per-league config (feed paths, browsing mode, line-model constants)
+src/lib/games/     ESPN + Odds API clients, parsers, markets + predictions
 src/lib/bets/      place / settle / reset (transactional)
 src/lib/social/    posts, follows, feed, stats, leaderboard
 src/lib/auth/      password auth, hashed session tokens
 src/app/           pages + server actions
 src/components/    UI (bet slip, game cards, tickets, posts)
+e2e/               Playwright tests
 docs/plans/        product requirements
 ```
 

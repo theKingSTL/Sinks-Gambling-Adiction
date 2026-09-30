@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "ci": "npm run lint && npm run typecheck && npm test && npm run build"
+    "ci": "npm run lint && npm run typecheck && npm test && npm run build",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -24,6 +25,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.4",

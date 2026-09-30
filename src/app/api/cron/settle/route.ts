@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { settleOpenBets } from "@/lib/bets/service";
 import { db } from "@/lib/db";
-import { getGame } from "@/lib/nba/espn";
+import { getGame } from "@/lib/games/espn";
 
 /** Hit on a schedule (e.g. every 5 min) with `Authorization: Bearer $CRON_SECRET`. */
 export async function POST(request: Request) {

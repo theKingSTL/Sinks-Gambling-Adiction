@@ -1,9 +1,10 @@
-import type { BookOdds, Game, GameState, TeamSide } from "./types";
+import type { SportKey } from "@/lib/sports";
+import type { BookOdds, Game, GameState, Prediction, TeamSide } from "./types";
 
 /**
- * Normalizers for ESPN's public site API. The feed is untyped and changes
- * shape between seasons, so every read is defensive and missing data maps to
- * null instead of throwing.
+ * Normalizers for ESPN's public site API (all leagues share one shape). The
+ * feed is untyped and changes between seasons, so every read is defensive and
+ * missing data maps to null instead of throwing.
  */
 
 type Json = Record<string, unknown>;
@@ -32,6 +33,7 @@ function parseTeam(competitor: Json): TeamSide {
   const team = obj(competitor.team);
   const records = arr(competitor.records ?? competitor.record).map(obj);
   const overall = records.find((r) => r.type === "total" || r.name === "overall") ?? records[0];
+  const rank = num(obj(competitor.curatedRank).current) ?? num(competitor.rank);
   return {
     id: str(team.id) ?? "",
     abbr: str(team.abbreviation) ?? "",
@@ -41,6 +43,7 @@ function parseTeam(competitor: Json): TeamSide {
     color: str(team.color),
     score: num(competitor.score),
     record: overall ? str(overall.summary) : null,
+    rank: rank !== null && rank > 0 && rank <= 25 ? rank : null, // ESPN uses 99 for unranked
   };
 }
 
@@ -61,7 +64,7 @@ export function parseBookOdds(raw: unknown): BookOdds | null {
 
   const homeSpread = num(closeOrOpen(ps.home).line) ?? num(home.spread) ?? num(o.spread);
   const odds: BookOdds = {
-    provider: str(obj(o.provider).name) ?? "Sportsbook",
+    provider: str(obj(o.provider).displayName) ?? str(obj(o.provider).name) ?? "Sportsbook",
     homeMoneyline: price(closeOrOpen(ml.home).odds) ?? price(home.moneyLine),
     awayMoneyline: price(closeOrOpen(ml.away).odds) ?? price(away.moneyLine),
     homeSpread,
@@ -79,7 +82,7 @@ function parseState(v: unknown): GameState {
   return v === "in" || v === "post" ? v : "pre";
 }
 
-export function parseScoreboardEvent(raw: unknown): Game | null {
+export function parseScoreboardEvent(raw: unknown, sport: SportKey): Game | null {
   const event = obj(raw);
   const comp = obj(arr(event.competitions)[0]);
   const competitors = arr(comp.competitors).map(obj);
@@ -91,6 +94,7 @@ export function parseScoreboardEvent(raw: unknown): Game | null {
 
   const statusType = obj(obj(event.status).type);
   return {
+    sport,
     id,
     startsAt,
     state: parseState(statusType.state),
@@ -104,7 +108,7 @@ export function parseScoreboardEvent(raw: unknown): Game | null {
 }
 
 /** Summary endpoint: header carries status + competitors, pickcenter carries odds. */
-export function parseSummaryGame(raw: unknown): Game | null {
+export function parseSummaryGame(raw: unknown, sport: SportKey): Game | null {
   const summary = obj(raw);
   const header = obj(summary.header);
   const comp = obj(arr(header.competitions)[0]);
@@ -115,11 +119,12 @@ export function parseSummaryGame(raw: unknown): Game | null {
     status: comp.status,
     competitions: [{ competitors: comp.competitors, odds: summary.pickcenter ?? summary.odds }],
   };
-  return parseScoreboardEvent(event);
+  return parseScoreboardEvent(event, sport);
 }
 
 export type BoxPlayer = { id: string; name: string; starter: boolean; dnp: boolean; stats: string[] };
-export type BoxTeam = { teamId: string; abbr: string; labels: string[]; players: BoxPlayer[] };
+export type BoxGroup = { name: string; labels: string[]; players: BoxPlayer[] };
+export type BoxTeam = { teamId: string; abbr: string; groups: BoxGroup[] };
 export type TeamStatLine = { teamId: string; stats: { label: string; value: string }[] };
 export type Leader = { teamId: string; category: string; player: string; value: string };
 
@@ -128,31 +133,40 @@ export type GameDetail = {
   box: BoxTeam[];
   teamStats: TeamStatLine[];
   leaders: Leader[];
+  /** ESPN's own Matchup Predictor, when published (football mostly). */
+  espnPrediction: Pick<Prediction, "homeWinProb"> | null;
 };
 
-export function parseSummary(raw: unknown): GameDetail | null {
-  const game = parseSummaryGame(raw);
+const titleCase = (s: string) => s.replace(/^\w/, (c) => c.toUpperCase());
+
+export function parseSummary(raw: unknown, sport: SportKey): GameDetail | null {
+  const game = parseSummaryGame(raw, sport);
   if (!game) return null;
   const summary = obj(raw);
   const boxscore = obj(summary.boxscore);
 
   const box: BoxTeam[] = arr(boxscore.players).map((t) => {
     const team = obj(obj(t).team);
-    const stats = obj(arr(obj(t).statistics)[0]);
     return {
       teamId: str(team.id) ?? "",
       abbr: str(team.abbreviation) ?? "",
-      labels: arr(stats.labels).map((l) => String(l)),
-      players: arr(stats.athletes).map((a) => {
-        const athlete = obj(obj(a).athlete);
-        return {
-          id: str(athlete.id) ?? "",
-          name: str(athlete.shortName) ?? str(athlete.displayName) ?? "",
-          starter: obj(a).starter === true,
-          dnp: obj(a).didNotPlay === true,
-          stats: arr(obj(a).stats).map((s) => String(s)),
-        };
-      }),
+      groups: arr(obj(t).statistics)
+        .map(obj)
+        .map((g) => ({
+          name: titleCase(str(g.text) ?? str(g.name) ?? str(g.type) ?? ""),
+          labels: arr(g.labels).map((l) => String(l)),
+          players: arr(g.athletes).map((a) => {
+            const athlete = obj(obj(a).athlete);
+            return {
+              id: str(athlete.id) ?? "",
+              name: str(athlete.shortName) ?? str(athlete.displayName) ?? "",
+              starter: obj(a).starter === true,
+              dnp: obj(a).didNotPlay === true,
+              stats: arr(obj(a).stats).map((s) => String(s)),
+            };
+          }),
+        }))
+        .filter((g) => g.players.length > 0 && g.labels.length > 0),
     };
   });
 
@@ -175,23 +189,69 @@ export function parseSummary(raw: unknown): GameDetail | null {
     });
   });
 
-  return { game, box, teamStats, leaders };
+  const predictor = obj(summary.predictor);
+  const homePct = num(obj(predictor.homeTeam).gameProjection);
+  const awayPct = num(obj(predictor.awayTeam).gameProjection);
+  const espnPrediction =
+    homePct !== null && awayPct !== null && homePct + awayPct > 0 ? { homeWinProb: homePct / (homePct + awayPct) } : null;
+
+  return { game, box, teamStats, leaders, espnPrediction };
 }
 
 export type StandingRow = { teamId: string; abbr: string; pointsFor: number; pointsAgainst: number; gamesPlayed: number };
 
+/** Standings nest conferences -> divisions; entries can repeat stats (overall first, then conference). */
+function standingEntries(node: Json): Json[] {
+  const own = arr(obj(node.standings).entries).map(obj);
+  return [...own, ...arr(node.children).flatMap((c) => standingEntries(obj(c)))];
+}
+
 export function parseStandings(raw: unknown): StandingRow[] {
-  return arr(obj(raw).children).flatMap((conf) =>
-    arr(obj(obj(conf).standings).entries).flatMap((e) => {
+  const seen = new Set<string>();
+  return standingEntries(obj(raw)).flatMap((entry) => {
+    const team = obj(entry.team);
+    const teamId = str(team.id);
+    if (!teamId || seen.has(teamId)) return [];
+    seen.add(teamId);
+
+    const statList = arr(entry.stats).map(obj);
+    const stats = new Map<unknown, number | null>();
+    for (const s of statList) if (!stats.has(s.name)) stats.set(s.name, num(s.value));
+    // Some leagues (college football) omit losses; the overall "W-L[-T]" string always has them.
+    const overall = str(statList.find((s) => s.type === "total" || s.name === "overall")?.displayValue);
+    const fromRecord = overall ? overall.split("-").reduce((sum, n) => sum + (Number(n) || 0), 0) : 0;
+    const gp =
+      stats.get("gamesPlayed") ??
+      (fromRecord || (stats.get("wins") ?? 0) + (stats.get("losses") ?? 0) + (stats.get("ties") ?? 0));
+    if (!gp) return [];
+    const pf = stats.get("avgPointsFor") ?? (stats.get("pointsFor") != null ? stats.get("pointsFor")! / gp : null);
+    const pa =
+      stats.get("avgPointsAgainst") ?? (stats.get("pointsAgainst") != null ? stats.get("pointsAgainst")! / gp : null);
+    if (pf == null || pa == null) return [];
+    return [{ teamId, abbr: str(team.abbreviation) ?? "", pointsFor: pf, pointsAgainst: pa, gamesPlayed: gp }];
+  });
+}
+
+export type CalendarWeek = { seasonType: number; week: number; label: string; detail: string; start: string; end: string };
+
+/** Football season calendar from the scoreboard's league block. */
+export function parseCalendar(raw: unknown): CalendarWeek[] {
+  const league = obj(arr(obj(raw).leagues)[0]);
+  return arr(league.calendar).flatMap((section) => {
+    const s = obj(section);
+    const seasonType = num(s.value);
+    if (seasonType === null || seasonType > 3) return []; // skip off-season
+    return arr(s.entries).flatMap((e) => {
       const entry = obj(e);
-      const team = obj(entry.team);
-      const stats = new Map(arr(entry.stats).map(obj).map((s) => [s.name, num(s.value)]));
-      const pf = stats.get("avgPointsFor");
-      const pa = stats.get("avgPointsAgainst");
-      const gp = (stats.get("wins") ?? 0) + (stats.get("losses") ?? 0);
-      const teamId = str(team.id);
-      if (!teamId || pf == null || pa == null || gp === 0) return [];
-      return [{ teamId, abbr: str(team.abbreviation) ?? "", pointsFor: pf, pointsAgainst: pa, gamesPlayed: gp }];
-    }),
-  );
+      const week = num(entry.value);
+      const start = str(entry.startDate);
+      const end = str(entry.endDate);
+      if (week === null || !start || !end) return [];
+      return [{ seasonType, week, label: str(entry.label) ?? `Week ${week}`, detail: str(entry.detail) ?? "", start, end }];
+    });
+  });
+}
+
+export function parseSeasonYear(raw: unknown): number | null {
+  return num(obj(obj(arr(obj(raw).leagues)[0]).season).year);
 }

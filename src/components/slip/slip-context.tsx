@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LineChange } from "@/lib/bets/service";
-import type { Selection } from "@/lib/nba/types";
+import type { Selection } from "@/lib/games/types";
 
 export type SlipLeg = Selection & { matchup: string; startsAt: string };
 

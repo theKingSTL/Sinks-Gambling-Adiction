@@ -1,4 +1,5 @@
 import "server-only";
+import { SPORTS, type SportKey } from "@/lib/sports";
 import type { BookOdds, Game } from "./types";
 
 /**
@@ -8,19 +9,19 @@ import type { BookOdds, Game } from "./types";
  */
 
 type OddsApiOutcome = { name: string; price: number; point?: number };
-type OddsApiEvent = {
+export type OddsApiEvent = {
   commence_time: string;
   home_team: string;
   away_team: string;
   bookmakers: { title: string; markets: { key: string; outcomes: OddsApiOutcome[] }[] }[];
 };
 
-const nickname = (team: string) => team.trim().split(/\s+/).at(-1)?.toLowerCase() ?? "";
+const norm = (team: string) => team.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
 
-export async function fetchOddsApi(): Promise<OddsApiEvent[]> {
+export async function fetchOddsApi(sport: SportKey): Promise<OddsApiEvent[]> {
   const key = process.env.ODDS_API_KEY;
   if (!key) return [];
-  const url = new URL("https://api.the-odds-api.com/v4/sports/basketball_nba/odds");
+  const url = new URL(`https://api.the-odds-api.com/v4/sports/${SPORTS[sport].oddsApiKey}/odds`);
   url.search = new URLSearchParams({
     apiKey: key,
     regions: "us",
@@ -62,14 +63,21 @@ function toBookOdds(event: OddsApiEvent): BookOdds | null {
   };
 }
 
+/** Same team: names match, or one contains the other ("LA Clippers" vs "Los Angeles Clippers" handled by nickname). */
+function sameTeam(a: string, b: string): boolean {
+  const x = norm(a);
+  const y = norm(b);
+  return x === y || x.includes(y) || y.includes(x) || x.split(" ").at(-1) === y.split(" ").at(-1);
+}
+
 export function applyOddsApi(games: Game[], events: OddsApiEvent[]): Game[] {
   if (events.length === 0) return games;
   return games.map((game) => {
     if (game.bookOdds) return game;
     const match = events.find(
       (e) =>
-        nickname(e.home_team) === nickname(game.home.name) &&
-        nickname(e.away_team) === nickname(game.away.name) &&
+        sameTeam(e.home_team, game.home.name) &&
+        sameTeam(e.away_team, game.away.name) &&
         Math.abs(Date.parse(e.commence_time) - Date.parse(game.startsAt)) < 12 * 3_600_000,
     );
     const odds = match ? toBookOdds(match) : null;
