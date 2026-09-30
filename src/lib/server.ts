@@ -1,0 +1,39 @@
+import "server-only";
+import { settleOpenBets, type MarketResolver } from "@/lib/bets/service";
+import { db } from "@/lib/db";
+import { getGame, getMarketsForGame } from "@/lib/nba/espn";
+
+/** Live markets for the games in a slip, straight from the feed. */
+export const resolveMarkets: MarketResolver = async (gameIds) => {
+  const entries = await Promise.all(
+    gameIds.map(async (id) => {
+      const game = await getGame(id);
+      return game ? ([id, { game, markets: await getMarketsForGame(game) }] as const) : null;
+    }),
+  );
+  return new Map(entries.filter((e) => e !== null));
+};
+
+const SETTLE_EVERY_MS = 30_000;
+const globalForSettle = globalThis as unknown as { lastSettle?: number; settling?: Promise<unknown> };
+
+/**
+ * Opportunistic settlement: pages call this so results land without a
+ * scheduler. Throttled, and concurrent callers share one in-flight run.
+ * The cron route calls settleOpenBets directly for guaranteed cadence.
+ */
+export async function maybeSettle(): Promise<void> {
+  const now = Date.now();
+  if (globalForSettle.settling) {
+    await globalForSettle.settling;
+    return;
+  }
+  if (globalForSettle.lastSettle && now - globalForSettle.lastSettle < SETTLE_EVERY_MS) return;
+  globalForSettle.lastSettle = now;
+  globalForSettle.settling = settleOpenBets(db, getGame)
+    .catch((err) => console.error("[settle] failed", err))
+    .finally(() => {
+      globalForSettle.settling = undefined;
+    });
+  await globalForSettle.settling;
+}

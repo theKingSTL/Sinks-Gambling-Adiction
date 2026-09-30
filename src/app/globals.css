@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Dark is the default (scoreboard at night); light mirrors it.
+ * One accent — court orange — for primary action and selected odds.
+ * Result colors (win/loss/push) are reserved for outcomes only.
+ */
+:root {
+  --bg: #0b0d10;
+  --surface: #12151a;
+  --raised: #191d24;
+  --sunken: #0e1014;
+  --line: #242a33;
+  --line-strong: #323a46;
+  --text: #eceef1;
+  --muted: #8b93a0;
+  --faint: #5b6370;
+  --accent: #ff7a1a;
+  --accent-ink: #1a0d02;
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --win: #34d399;
+  --loss: #ff5d62;
+  --push: #a3abb8;
+  --live: #ff3b47;
+  --focus: #ffb27a;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --raised: #f1efeb;
+    --sunken: #ebe8e3;
+    --line: #e2ded7;
+    --line-strong: #cfc9bf;
+    --text: #16181c;
+    --muted: #5d6470;
+    --faint: #8b919b;
+    --accent: #e8600a;
+    --accent-ink: #ffffff;
+    --win: #0f9d6b;
+    --loss: #d93a40;
+    --push: #6b7380;
+    --live: #e0242f;
+    --focus: #e8600a;
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-win: var(--win);
+  --color-loss: var(--loss);
+  --color-push: var(--push);
+  --color-live: var(--live);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.num {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.display {
+  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot {
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+  * { transition-duration: 0ms !important; }
+}
